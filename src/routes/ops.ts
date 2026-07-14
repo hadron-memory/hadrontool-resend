@@ -35,7 +35,7 @@ export function opsRouter(deps: ResendDeps): Router {
 
   router.post('/:operation', async (req, res) => {
     const name = req.params.operation;
-    if (!OPERATIONS[name]) {
+    if (!Object.hasOwn(OPERATIONS, name)) {
       res.status(404).json({
         error: 'unknown_operation',
         message: `No operation "${name}"`,

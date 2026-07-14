@@ -76,7 +76,7 @@ export const OPERATIONS: Record<string, OperationDef> = {
 };
 
 export async function runOperation(deps: ResendDeps, name: string, input: Record<string, unknown>): Promise<unknown> {
-  const def = OPERATIONS[name];
+  const def = Object.hasOwn(OPERATIONS, name) ? OPERATIONS[name] : undefined;
   if (!def) throw new ValidationError('operation', `unknown operation "${name}"`);
   return def.run(deps, input);
 }

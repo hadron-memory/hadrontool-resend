@@ -1,5 +1,6 @@
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { config, VERSION } from './config.js';
+import { ValidationError } from './errors.js';
 import { logger } from './logger.js';
 import { requireAuth } from './middleware/auth.js';
 import { healthRouter } from './routes/health.js';
@@ -22,7 +23,9 @@ export function createApp(options: AppOptions = {}): Express {
   const app = express();
 
   app.disable('x-powered-by');
-  app.use(express.json({ limit: '64kb' }));
+  // The operation contract permits a 20k-character body plus inline
+  // credentials; multibyte JSON can exceed Express's default/64kb envelope.
+  app.use(express.json({ limit: '128kb' }));
 
   app.use(healthRouter);
 
@@ -53,7 +56,8 @@ export function createApp(options: AppOptions = {}): Express {
     const status =
       (err as { status?: number })?.status ?? (err as { statusCode?: number })?.statusCode;
     if (typeof status === 'number') {
-      res.status(status).json({ error: 'bad_request', message: (err as Error).message });
+      const reason = status === 413 ? 'request body is too large' : 'request body is invalid';
+      res.status(status).json(new ValidationError('body', reason).toBody());
       return;
     }
     logger.error('unhandled error', { err: String((err as Error)?.message ?? err).slice(0, 200), path: req.path });

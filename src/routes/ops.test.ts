@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app.js';
+import { runOperation } from '../ops/index.js';
 import type { ResendDeps } from '../resend.js';
 
 const TOKEN = 'test-service-token';
@@ -133,5 +134,53 @@ describe('send-email operation', () => {
       .send({})
       .expect(404);
     expect(res.body).toMatchObject({ error: 'unknown_operation', operations: ['send-email'] });
+  });
+
+  it.each(['toString', 'constructor', '__proto__'])('rejects inherited operation name %s', async (name) => {
+    const deps = fakeDeps();
+    const res = await request(appWith(deps))
+      .post(`/ops/${name}`)
+      .set('authorization', `Bearer ${TOKEN}`)
+      .send({})
+      .expect(404);
+    expect(res.body.error).toBe('unknown_operation');
+    expect(deps.calls).toHaveLength(0);
+    await expect(runOperation(deps, name, {})).rejects.toMatchObject({ code: 'validation_error' });
+  });
+
+  it('accepts a maximum-size multibyte envelope that exceeds 64kb', async () => {
+    const deps = fakeDeps();
+    await send(appWith(deps), {
+      ...EMAIL,
+      subject: 's'.repeat(200),
+      text: '界'.repeat(20_000),
+      idempotencyKey: 'i'.repeat(256),
+      apiKey: 'r'.repeat(8_192),
+      from: INLINE.from,
+    }).expect(200);
+    expect(deps.calls).toHaveLength(1);
+  });
+
+  it('maps malformed JSON to a sanitized validation_error', async () => {
+    const raw = '{"to":"private@example.net"';
+    const res = await request(appWith(fakeDeps()))
+      .post('/ops/send-email')
+      .set('authorization', `Bearer ${TOKEN}`)
+      .set('content-type', 'application/json')
+      .send(raw)
+      .expect(400);
+    expect(res.body).toMatchObject({ error: 'validation_error', field: 'body', reason: 'request body is invalid' });
+    expect(JSON.stringify(res.body)).not.toContain('private@example.net');
+  });
+
+  it('maps oversized JSON to a sanitized validation_error', async () => {
+    const privateBody = 'private-body-'.repeat(12_000);
+    const res = await send(appWith(fakeDeps()), { ...EMAIL, text: privateBody }).expect(413);
+    expect(res.body).toMatchObject({
+      error: 'validation_error',
+      field: 'body',
+      reason: 'request body is too large',
+    });
+    expect(JSON.stringify(res.body)).not.toContain('private-body');
   });
 });
