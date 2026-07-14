@@ -11,6 +11,10 @@ const EnvSchema = z.object({
     .min(3)
     .max(320)
     .refine((value) => !/[\r\n]/.test(value), 'must not contain newlines')
+    .refine((value) => {
+      const angle = /<([^<>]+)>$/.exec(value.trim());
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((angle?.[1] ?? value).trim());
+    }, 'must be an email address or Name <email@example.com>')
     .optional(),
 });
 

@@ -5,6 +5,7 @@ import type { ResendDeps } from '../resend.js';
 
 const TOKEN = 'test-service-token';
 const PROVIDER = { apiKey: 're_secret', from: 'Hadron Agent <agent@example.com>' };
+const INLINE = { apiKey: 're_org_secret', from: 'Acme Agent <agent@acme.example>' };
 const EMAIL = {
   to: 'person@example.net',
   subject: 'Deploy finished',
@@ -53,13 +54,13 @@ describe('auth and discovery', () => {
       name: 'hadrontool-resend',
       operations: ['send-email'],
       stateless: true,
-      providerConfigured: true,
+      platformProviderConfigured: true,
     });
     const unconfigured = await request(appWith(fakeDeps(undefined, {})))
       .get('/info')
       .set('authorization', `Bearer ${TOKEN}`)
       .expect(200);
-    expect(unconfigured.body.providerConfigured).toBe(false);
+    expect(unconfigured.body.platformProviderConfigured).toBe(false);
   });
 });
 
@@ -73,11 +74,28 @@ describe('send-email operation', () => {
     expect(deps.calls).toHaveLength(1);
   });
 
+  it('uses all-or-nothing inline credentials instead of the platform provider', async () => {
+    const deps = fakeDeps();
+    await send(appWith(deps), { ...EMAIL, ...INLINE }).expect(200);
+    const call = deps.calls[0].init;
+    expect((call.headers as Record<string, string>).authorization).toBe(`Bearer ${INLINE.apiKey}`);
+    expect(JSON.parse(String(call.body)).from).toBe(INLINE.from);
+  });
+
+  it('inline credentials work when no platform provider is configured', async () => {
+    const deps = fakeDeps(undefined, {});
+    await send(appWith(deps), { ...EMAIL, ...INLINE }).expect(200);
+    expect(deps.calls).toHaveLength(1);
+  });
+
   it.each([
     [{ ...EMAIL, to: 'not-email' }, 'bad recipient'],
     [{ ...EMAIL, subject: '' }, 'empty subject'],
     [{ ...EMAIL, text: '' }, 'empty body'],
     [{ ...EMAIL, idempotencyKey: 'contains spaces' }, 'bad idempotency key'],
+    [{ ...EMAIL, apiKey: INLINE.apiKey }, 'API key without sender'],
+    [{ ...EMAIL, from: INLINE.from }, 'sender without API key'],
+    [{ ...EMAIL, ...INLINE, from: 'not-an-email' }, 'bad inline sender'],
     [{ ...EMAIL, html: '<b>no</b>' }, 'unknown field'],
   ])('rejects invalid input before calling Resend (%s)', async (payload, _label) => {
     const deps = fakeDeps();
@@ -98,13 +116,14 @@ describe('send-email operation', () => {
     vi.spyOn(console, 'log').mockImplementation((line: unknown) => void logs.push(String(line)));
     vi.spyOn(console, 'error').mockImplementation((line: unknown) => void logs.push(String(line)));
     const deps = fakeDeps(jsonResponse(422, { message: EMAIL.text }));
-    const res = await send(appWith(deps), EMAIL).expect(502);
+    const res = await send(appWith(deps), { ...EMAIL, ...INLINE }).expect(502);
     expect(res.body.error).toBe('provider_rejected');
     const surface = JSON.stringify(res.body) + logs.join('\n');
     expect(surface).not.toContain(EMAIL.to);
     expect(surface).not.toContain(EMAIL.subject);
     expect(surface).not.toContain(EMAIL.text);
     expect(surface).not.toContain(PROVIDER.apiKey);
+    expect(surface).not.toContain(INLINE.apiKey);
   });
 
   it('reports unknown operations', async () => {

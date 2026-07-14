@@ -14,8 +14,11 @@ and one `comm.outbound` action ticket before this service receives a request.
   `http://hadrontool-resend:8080`; it needs no public route.
 - Hadron-blind: no platform identity, authorization, or data lookup lives here.
 - Fixed upstream: requests can reach only `https://api.resend.com/emails`.
-- Fixed sender: callers choose one recipient, subject, and text body; the
-  verified sender comes only from `RESEND_FROM`.
+- Org-owned credentials: hadron-server normally sends one organization's
+  encrypted-at-rest API key and fixed sender inline for that request. The
+  sidecar never persists either value.
+- Optional platform fallback: `RESEND_API_KEY` + `RESEND_FROM` provide a
+  platform account only for orgs explicitly allowlisted by core operations.
 - Provider-backed idempotency: core supplies an idempotency key and the service
   forwards it to Resend. The service keeps no ledger and never retries sends.
 - Data minimization: recipient, subject, body, API key, and bearer token are
@@ -33,7 +36,9 @@ require `Authorization: Bearer $RESEND_TOOL_TOKEN` when configured.
   "to": "person@example.net",
   "subject": "Deploy finished",
   "text": "Everything is healthy.",
-  "idempotencyKey": "run_123:4c550f"
+  "idempotencyKey": "run_123:4c550f",
+  "apiKey": "re_org_owned_secret",
+  "from": "Acme Agent <agent@example.com>"
 }
 ```
 
@@ -49,12 +54,14 @@ Stable errors are `validation_error` (400), `provider_not_configured` (503),
 | Variable | Required | Notes |
 |---|---|---|
 | `RESEND_TOOL_TOKEN` | in production | Shared bearer for the internal ops plane |
-| `RESEND_API_KEY` | for sends | Dedicated Resend API key; may be unset for staged deploys |
-| `RESEND_FROM` | with API key | Verified fixed sender, e.g. `Hadron Agent <agent@example.com>` |
+| `RESEND_API_KEY` | optional fallback | Platform Resend API key; may be unset for a BYO-only deployment |
+| `RESEND_FROM` | with fallback key | Platform fixed sender; all-or-nothing with `RESEND_API_KEY` |
 | `PORT` | no | Defaults to 8080 |
 
-Use a dedicated API key and sending subdomain, separate from Hadron's login
-emails, so agent traffic cannot damage authentication-email deliverability.
+Inline credentials are all-or-nothing and take precedence over the platform
+account. Hadron-server chooses them from the run organization; model-authored
+tool arguments never contain credentials. Any platform fallback must use a
+dedicated key and sending subdomain, separate from Hadron login mail.
 
 ## Development
 

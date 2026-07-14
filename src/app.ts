@@ -37,7 +37,7 @@ export function createApp(options: AppOptions = {}): Express {
       version: VERSION,
       operations: Object.keys(OPERATIONS),
       stateless: true,
-      providerConfigured: Boolean(deps.provider),
+      platformProviderConfigured: Boolean(deps.provider),
     });
   });
 
