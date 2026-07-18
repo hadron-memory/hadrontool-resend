@@ -71,3 +71,9 @@ npm run dev
 npm test
 npm run typecheck
 ```
+
+The test suite covers the Resend seam with an injected fake `fetch`, so it never
+touches the network. Before cutting a release, run a manual smoke test against
+real Resend in staging: point `RESEND_API_KEY` + `RESEND_FROM` (or an inline
+`apiKey`/`from`) at a Resend test key and confirm `POST /ops/send-email` returns
+a real `email_...` id.

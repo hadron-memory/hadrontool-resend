@@ -57,6 +57,9 @@ export async function sendEmail(
       payload = (await res.json()) as Record<string, unknown> | null;
     } catch {
       if (controller.signal.aborted) throw new Error('timed out mid-body');
+      // Non-JSON provider response. Downstream id-extraction maps this to
+      // upstream_unreachable; log the status (never the body) to aid debugging.
+      logger.warn('resend response body was not JSON', { status: res.status });
       payload = null;
     }
   } catch (err) {
