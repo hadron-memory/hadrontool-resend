@@ -21,7 +21,7 @@ export class ValidationError extends ResendToolError {
   ) {
     super(`This request couldn't be processed: ${reason}`);
   }
-  protected extraFields() {
+  protected override extraFields() {
     return { field: this.field, reason: this.reason };
   }
 }
@@ -40,7 +40,7 @@ export class ProviderUnauthorizedError extends ResendToolError {
   constructor(public providerStatus: number) {
     super(`Resend rejected the configured credentials (HTTP ${providerStatus}).`);
   }
-  protected extraFields() {
+  protected override extraFields() {
     return { providerStatus: this.providerStatus };
   }
 }
@@ -51,7 +51,7 @@ export class ProviderRejectedError extends ResendToolError {
   constructor(public providerStatus: number) {
     super(`Resend rejected the email (HTTP ${providerStatus}).`);
   }
-  protected extraFields() {
+  protected override extraFields() {
     return { providerStatus: this.providerStatus };
   }
 }
@@ -78,7 +78,7 @@ export class UpstreamTimeoutError extends ResendToolError {
   constructor(public timeoutSeconds: number) {
     super(`The Resend request timed out after ${timeoutSeconds}s.`);
   }
-  protected extraFields() {
+  protected override extraFields() {
     return { timeoutSeconds: this.timeoutSeconds };
   }
 }
