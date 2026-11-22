@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ProviderNotConfiguredError, ValidationError } from '../errors.js';
+import { getDomainStatus } from '../domainStatus.js';
 import { sendEmail, type ResendDeps } from '../resend.js';
 import type { ResendProvider } from '../config.js';
 
@@ -45,6 +46,18 @@ function resolveProvider(
   return { apiKey: input.apiKey!, from: input.from! };
 }
 
+// ASCII hostnames only (a punycode `xn--` TLD is not matched by the alphabetic TLD rule; sender domains with one are not
+// supported by this op).
+const DOMAIN_RE = /^(?=.{1,253}$)([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/;
+
+/** Read-only: the credential is inline and required (the tool holds no platform principal for this op). */
+const getDomainStatusSchema = z
+  .object({
+    domain: z.string().regex(DOMAIN_RE, 'must be a bare domain name such as example.com'),
+    apiKey: z.string().min(1).max(8_192).regex(/^\S+$/),
+  })
+  .strict();
+
 export interface OperationDef {
   schema: z.ZodType;
   run(deps: ResendDeps, input: Record<string, unknown>): Promise<unknown>;
@@ -71,8 +84,13 @@ const sendEmailOp = defineOp(sendEmailSchema, async (deps, input) => {
   );
 });
 
+const getDomainStatusOp = defineOp(getDomainStatusSchema, (deps, input) =>
+  getDomainStatus(input.apiKey, input.domain, deps),
+);
+
 export const OPERATIONS: Record<string, OperationDef> = {
   'send-email': sendEmailOp,
+  'get-domain-status': getDomainStatusOp,
 };
 
 export async function runOperation(deps: ResendDeps, name: string, input: Record<string, unknown>): Promise<unknown> {

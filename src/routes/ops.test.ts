@@ -53,7 +53,7 @@ describe('auth and discovery', () => {
     const configured = await request(appWith(fakeDeps())).get('/info').set('authorization', `Bearer ${TOKEN}`).expect(200);
     expect(configured.body).toMatchObject({
       name: 'hadrontool-resend',
-      operations: ['send-email'],
+      operations: ['send-email', 'get-domain-status'],
       stateless: true,
       platformProviderConfigured: true,
     });
@@ -133,7 +133,7 @@ describe('send-email operation', () => {
       .set('authorization', `Bearer ${TOKEN}`)
       .send({})
       .expect(404);
-    expect(res.body).toMatchObject({ error: 'unknown_operation', operations: ['send-email'] });
+    expect(res.body).toMatchObject({ error: 'unknown_operation', operations: ['send-email', 'get-domain-status'] });
   });
 
   it.each(['toString', 'constructor', '__proto__'])('rejects inherited operation name %s', async (name) => {
@@ -182,5 +182,68 @@ describe('send-email operation', () => {
       reason: 'request body is too large',
     });
     expect(JSON.stringify(res.body)).not.toContain('private-body');
+  });
+});
+
+describe('get-domain-status operation', () => {
+  const KEY = 're_org_secret_key';
+  const status = (app: ReturnType<typeof createApp>, body: unknown) =>
+    request(app).post('/ops/get-domain-status').set('authorization', `Bearer ${TOKEN}`).send(body as object);
+  const listing = (data: unknown[]) => jsonResponse(200, { object: 'list', data });
+
+  it('requires the bearer like every op', async () => {
+    await request(appWith(fakeDeps())).post('/ops/get-domain-status').send({ domain: 'acme.example', apiKey: KEY }).expect(401);
+  });
+
+  it('answers { ok, domain, status } for verified, unverified and not_found', async () => {
+    const data = [
+      { id: '1', name: 'good.example', status: 'verified' },
+      { id: '2', name: 'wait.example', status: 'pending' },
+    ];
+    for (const [domain, expected] of [['good.example', 'verified'], ['wait.example', 'unverified'], ['none.example', 'not_found']]) {
+      const res = await status(appWith(fakeDeps(listing(data))), { domain, apiKey: KEY }).expect(200);
+      expect(res.body).toEqual({ ok: true, domain, status: expected });
+    }
+  });
+
+  it('takes the credential inline only: no platform fallback, no from, no unknown fields', async () => {
+    const deps = fakeDeps(listing([]));
+    await status(appWith(deps), { domain: 'acme.example' }).expect(400);
+    await status(appWith(deps), { apiKey: KEY }).expect(400);
+    await status(appWith(deps), { domain: 'acme.example', apiKey: KEY, from: 'a@acme.example' }).expect(400);
+    await status(appWith(deps), { domain: 'not a domain', apiKey: KEY }).expect(400);
+    await status(appWith(deps), { domain: 'https://acme.example/', apiKey: KEY }).expect(400);
+    expect(deps.calls).toHaveLength(0);
+  });
+
+  it('uses the inline key, never the platform key, and makes one GET', async () => {
+    const deps = fakeDeps(listing([]));
+    await status(appWith(deps), { domain: 'acme.example', apiKey: KEY }).expect(200);
+    expect(deps.calls).toHaveLength(1);
+    expect(deps.calls[0].init.method).toBe('GET');
+    expect((deps.calls[0].init.headers as Record<string, string>).authorization).toBe(`Bearer ${KEY}`);
+  });
+
+  it('the key appears in no response body, including the typed provider error and a validation error', async () => {
+    const bodies: string[] = [];
+    for (const res of [jsonResponse(401, { message: KEY }), jsonResponse(422, { message: KEY }), jsonResponse(500, { message: KEY }), listing([])]) {
+      bodies.push(JSON.stringify((await status(appWith(fakeDeps(res)), { domain: 'acme.example', apiKey: KEY })).body));
+    }
+    const leaky: ResendDeps = { fetchImpl: (async () => { throw new Error(`boom ${KEY}`); }) as typeof fetch };
+    bodies.push(JSON.stringify((await status(appWith(leaky), { domain: 'acme.example', apiKey: KEY })).body));
+    bodies.push(JSON.stringify((await status(appWith(fakeDeps()), { domain: 'bad domain', apiKey: KEY })).body));
+    bodies.push(JSON.stringify((await status(appWith(fakeDeps()), { domain: 'acme.example', apiKey: KEY, extra: 1 })).body));
+    for (const b of bodies) expect(b).not.toContain(KEY);
+  });
+
+  it('maps upstream failures to the shared HTTP statuses and codes', async () => {
+    for (const [upstream, http, code] of [[401, 502, 'provider_unauthorized'], [429, 429, 'provider_rate_limited'], [503, 502, 'upstream_unreachable'], [422, 502, 'provider_rejected']] as const) {
+      const res = await status(appWith(fakeDeps(jsonResponse(upstream, {}))), { domain: 'acme.example', apiKey: KEY }).expect(http);
+      expect(res.body.error).toBe(code);
+    }
+  });
+
+  it('send-email is unchanged: still accepts the platform provider with no inline key', async () => {
+    await send(appWith(fakeDeps()), EMAIL).expect(200);
   });
 });
