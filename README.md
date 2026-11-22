@@ -49,6 +49,24 @@ Stable errors are `validation_error` (400), `provider_not_configured` (503),
 `provider_rate_limited` (429), `upstream_unreachable` (502),
 `upstream_timeout` (504), and `internal_error` (500).
 
+### `POST /ops/get-domain-status`
+
+Read-only report of a sender domain's Resend verification state. The credential
+is passed inline per request and is required (the tool holds no platform
+principal for this op); nothing is stored and the key never appears in any
+response or error body.
+
+```json
+{ "domain": "acme.example", "apiKey": "re_org_owned_secret" }
+```
+
+Success: `200 {"ok":true,"domain":"acme.example","status":"verified"}` where
+`status` is `verified`, `unverified` (listed in any other state) or
+`not_found` (absent from the account's domain list; a list longer than one page
+that lacks the domain is `upstream_unreachable`, never `not_found`). One
+bounded (10 s) `GET` of Resend's domain list; it never creates a domain,
+triggers verification or sends mail. The error catalog is the same as above.
+
 ## Configuration
 
 | Variable | Required | Notes |
