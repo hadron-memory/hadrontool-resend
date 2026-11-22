@@ -20,7 +20,7 @@ function depsReturning(res: Response): ResendDeps & { calls: { url: string; init
 }
 
 const list = (data: unknown[], extra: Record<string, unknown> = {}) => jsonResponse(200, { object: 'list', data, ...extra });
-const surface = (err: unknown) =>
+const allErrorSurfaces = (err: unknown) =>
   String(err) + JSON.stringify((err as { toBody?: () => unknown }).toBody?.() ?? {}) + JSON.stringify(err);
 
 describe('getDomainStatus', () => {
@@ -50,7 +50,8 @@ describe('getDomainStatus', () => {
 
   it('matches the exact domain, case-insensitively, never a parent or a subdomain', async () => {
     const deps = depsReturning(list([{ id: 'd1', name: 'Acme.Example', status: 'verified' }]));
-    await expect(getDomainStatus(KEY, 'acme.example', deps)).resolves.toMatchObject({ status: 'verified' });
+    await expect(getDomainStatus(KEY, 'acme.example', deps)).resolves.toEqual({ domain: 'acme.example', status: 'verified' });
+    await expect(getDomainStatus(KEY, 'ACME.Example', depsReturning(list([{ id: 'd1', name: 'Acme.Example', status: 'verified' }])))).resolves.toEqual({ domain: 'acme.example', status: 'verified' });
     const sub = depsReturning(list([{ id: 'd1', name: 'mail.acme.example', status: 'verified' }]));
     await expect(getDomainStatus(KEY, 'acme.example', sub)).resolves.toMatchObject({ status: 'not_found' });
     const parent = depsReturning(list([{ id: 'd1', name: 'acme.example', status: 'verified' }]));
@@ -92,6 +93,11 @@ describe('getDomainStatus', () => {
     await expect(getDomainStatus(KEY, 'acme.example', depsReturning(jsonResponse(200, { data: [{ status: 'verified' }] })))).rejects.toMatchObject({ code: 'upstream_unreachable' });
   });
 
+  it('a 200 whose body is not JSON is upstream_unreachable', async () => {
+    const deps = depsReturning(new Response('<html>nope</html>', { status: 200 }));
+    await expect(getDomainStatus(KEY, 'acme.example', deps)).rejects.toMatchObject({ code: 'upstream_unreachable' });
+  });
+
   it('maps the elapsed time budget to upstream_timeout', async () => {
     vi.useFakeTimers();
     const deps: ResendDeps = {
@@ -110,7 +116,7 @@ describe('getDomainStatus', () => {
     for (const deps of [echoing, leaky, shape, depsReturning(jsonResponse(500, { message: KEY })), depsReturning(jsonResponse(422, { message: KEY }))]) {
       const err = await getDomainStatus(KEY, 'acme.example', deps).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(Error);
-      expect(surface(err)).not.toContain(KEY);
+      expect(allErrorSurfaces(err)).not.toContain(KEY);
     }
   });
 });

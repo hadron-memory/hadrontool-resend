@@ -46,6 +46,8 @@ function resolveProvider(
   return { apiKey: input.apiKey!, from: input.from! };
 }
 
+// ASCII hostnames only (a punycode `xn--` TLD is not matched by the alphabetic TLD rule; sender domains with one are not
+// supported by this op).
 const DOMAIN_RE = /^(?=.{1,253}$)([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/;
 
 /** Read-only: the credential is inline and required (the tool holds no platform principal for this op). */

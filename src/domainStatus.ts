@@ -8,7 +8,13 @@ import {
 import { logger } from './logger.js';
 import type { ResendDeps } from './resend.js';
 
-/** Fixed upstream: the caller never supplies a URL. `limit=100` is Resend's page maximum. */
+/**
+ * Fixed upstream: the caller never supplies a URL. Resend's List Domains is cursor-paginated (`limit` 1-100, `after` /
+ * `before` domain-id cursors) and answers `{ object: 'list', has_more, data }`
+ * (https://resend.com/docs/api-reference/domains/list-domains, https://resend.com/docs/api-reference/pagination).
+ * `limit=100` is the page maximum. One call only (the op's bound): when `has_more` is true and the domain is not on the
+ * page, the answer is unknown, so it is an error, never `not_found`.
+ */
 export const RESEND_DOMAINS_URL = 'https://api.resend.com/domains?limit=100';
 export const DOMAIN_STATUS_TIMEOUT_MS = 10_000;
 

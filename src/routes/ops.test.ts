@@ -236,6 +236,13 @@ describe('get-domain-status operation', () => {
     for (const b of bodies) expect(b).not.toContain(KEY);
   });
 
+  it('maps upstream failures to the shared HTTP statuses and codes', async () => {
+    for (const [upstream, http, code] of [[401, 502, 'provider_unauthorized'], [429, 429, 'provider_rate_limited'], [503, 502, 'upstream_unreachable'], [422, 502, 'provider_rejected']] as const) {
+      const res = await status(appWith(fakeDeps(jsonResponse(upstream, {}))), { domain: 'acme.example', apiKey: KEY }).expect(http);
+      expect(res.body.error).toBe(code);
+    }
+  });
+
   it('send-email is unchanged: still accepts the platform provider with no inline key', async () => {
     await send(appWith(fakeDeps()), EMAIL).expect(200);
   });
